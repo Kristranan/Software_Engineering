@@ -1,0 +1,12 @@
+# Secrets
+.env
+.env.*
+serviceAccountKey.json
+*.pem
+*.key
+*credentials*.json
+*token*.json
+
+# Python
+__pycache__/
+*.pyc
