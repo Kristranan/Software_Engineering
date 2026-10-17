@@ -1,0 +1,5 @@
+[
+  {"device_id": "BOX-001", "shipment_id": "SHP-1001", "timestamp_s": 0, "remaining_buffer_pct": 34.0},
+  {"device_id": "BOX-001", "shipment_id": "SHP-1001", "timestamp_s": 3600, "remaining_buffer_pct": 32.0},
+  {"device_id": "BOX-001", "shipment_id": "SHP-1001", "timestamp_s": 7200, "remaining_buffer_pct": 29.9}
+]
