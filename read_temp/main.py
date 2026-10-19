@@ -11,8 +11,8 @@ while True :
   i += 1
   try : 
     # Measure the temperature & humidity
-    # if(i == 3) : raise OSError('Test sensor failure') <------- Try uncomment 2 of this if you wnat to try fail case
-    # dht.measure()
+    if(i == 3) : raise OSError('Test sensor failure') #<------- Try uncomment 2 of this if you wnat to try fail case
+    dht.measure()
     
     # Retrieve the sensor's temperature and humidity values.
     temperature = dht.temperature()
