@@ -12,11 +12,22 @@ class AlertSender:
         self._queue = []
 
     def send(self, event):
-        """Deliver the event now when there is signal; otherwise queue it."""
-        if self._network.is_online():
-            self._depot.receive(event)
-        else:
-            self._queue.append(event)
+        """Queue the event, then deliver everything waiting if there is signal.
+
+        Going through the queue keeps the order: alerts queued while offline
+        reach the depot before a new one.
+        """
+        self._queue.append(event)
+        self.flush()
+
+    def flush(self):
+        """When there is signal, deliver every queued alert in order, each once."""
+        if not self._network.is_online():
+            return
+        while self._queue:
+            # Remove an alert only after the depot has it, so none is lost.
+            self._depot.receive(self._queue[0])
+            self._queue.pop(0)
 
     def pending_count(self):
         """How many alerts are still waiting to be delivered."""
