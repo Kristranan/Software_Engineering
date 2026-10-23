@@ -1,127 +1,112 @@
+import importlib
 import io
+import json
 import os
 import sys
+import tempfile
 import types
 import unittest
 from contextlib import redirect_stdout
 from unittest import mock
 
-MAIN_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "main.py")
+import config
+from scheduler import Scheduler
+from test_scheduler import FakeTime
 
 
-class StopLoop(Exception):
-    """Raised by the fake sleep to end main.py's endless loop."""
+class FakeDHT22:
+    """Returns the given temperatures in order; an exception in the list is raised by measure()."""
 
-
-class FakeBoard:
-    """Stands in for machine, dht and time, so main.py runs without hardware or a real clock.
-
-    readings: one item per attempt, (temperature, humidity) or an exception that
-    dht.measure() raises.
-    """
-
-    def __init__(self, readings, start_ms=0):
-        self.readings = list(readings)
-        self.now_ms = start_ms
-        self.pins = []
-        self.sleeps = []
+    def __init__(self, values):
+        self.values = list(values)
         self.current = None
 
-    def modules(self):
-        board = self
+    def measure(self):
+        self.current = self.values.pop(0)
+        if isinstance(self.current, Exception):
+            raise self.current
 
-        class Pin:
-            def __init__(self, number):
-                board.pins.append(number)
-
-        class DHT22:
-            def __init__(self, pin):
-                pass
-
-            def measure(self):
-                board.current = board.readings.pop(0)
-                if isinstance(board.current, Exception):
-                    raise board.current
-
-            def temperature(self):
-                return board.current[0]
-
-            def humidity(self):
-                return board.current[1]
-
-        def sleep(seconds):
-            board.sleeps.append(seconds)
-            board.now_ms += seconds * 1000
-            if not board.readings:
-                raise StopLoop()
-
-        def ticks_ms():
-            return board.now_ms
-
-        return {
-            "machine": types.SimpleNamespace(Pin=Pin),
-            "dht": types.SimpleNamespace(DHT22=DHT22),
-            "time": types.SimpleNamespace(sleep=sleep, ticks_ms=ticks_ms),
-        }
+    def temperature(self):
+        return self.current
 
 
-def run_main(board):
-    """Run main.py until the readings run out; return what it printed."""
-    with open(MAIN_PATH) as f:
-        code = compile(f.read(), MAIN_PATH, "exec")
-    out = io.StringIO()
-    with mock.patch.dict(sys.modules, board.modules()), redirect_stdout(out):
-        try:
-            exec(code, {"__name__": "__main__"})
-        except StopLoop:
-            pass
-    return out.getvalue().splitlines()
+def load_main(values):
+    """Import main.py with fake machine and dht modules, so no hardware is needed."""
+    pins = []
+    sensor = FakeDHT22(values)
+    fakes = {
+        "machine": types.SimpleNamespace(Pin=lambda number: pins.append(number) or number),
+        "dht": types.SimpleNamespace(DHT22=lambda pin: sensor),
+    }
+    with mock.patch.dict(sys.modules, fakes):
+        sys.modules.pop("main", None)
+        main = importlib.import_module("main")
+    return main, pins
 
 
-class MainTest(unittest.TestCase):
-    # AC: Temperature is read at a configurable interval
-    def test_good_read_prints_temperature_and_humidity(self):
-        lines = run_main(FakeBoard([(4.5, 60.0)], start_ms=2000))
-        self.assertEqual(lines, [
-            "Attemp:  1",
-            "Temperature: 4.5 Time 2.0",
-            "Humidity: 60.0 Time: 2.0",
-        ])
+class DriverTest(unittest.TestCase):
+    def test_read_returns_temperature(self):
+        main, _ = load_main([4.5])
+        self.assertEqual(main.read(), 4.5)
 
-    def test_reads_again_after_each_wait(self):
-        board = FakeBoard([(4.5, 60.0), (4.6, 61.0)])
-        lines = run_main(board)
-        self.assertEqual(board.sleeps, [5, 5])
-        self.assertIn("Temperature: 4.5 Time 0.0", lines)
-        self.assertIn("Temperature: 4.6 Time 5.0", lines)
+    def test_read_raises_when_sensor_fails(self):
+        main, _ = load_main([OSError("sensor_timeout")])
+        with self.assertRaises(OSError):
+            main.read()
 
     def test_sensor_is_on_pin_4(self):
         # diagram.json wires esp:4 to dht1:SDA.
-        board = FakeBoard([(4.5, 60.0)])
-        run_main(board)
-        self.assertEqual(board.pins, [4])
+        _, pins = load_main([])
+        self.assertEqual(pins, [4])
+
+    def test_main_runs_scheduler_with_driver(self):
+        main, _ = load_main([])
+        with mock.patch.object(main, "Scheduler") as scheduler:
+            main.main()
+        scheduler.assert_called_once_with(main.read, main.emit, "BOX-001", "SHP-1001")
+        scheduler.return_value.run.assert_called_once_with()
+
+
+class BoxTest(unittest.TestCase):
+    """The real driver (with a fake sensor) plugged into the Scheduler, as main() does."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self.dir.name, "config.json")
+        self.time = FakeTime()
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def run_box(self, values):
+        main, _ = load_main(values)
+        out = io.StringIO()
+        with redirect_stdout(out):
+            Scheduler(main.read, main.emit, main.DEVICE_ID, main.SHIPMENT_ID,
+                      clock=self.time.clock, sleep=self.time.sleep,
+                      config_path=self.path).run(max_reads=len(values))
+        return [json.loads(line) for line in out.getvalue().splitlines()]
+
+    # AC: Temperature is read at a configurable interval
+    def test_reads_at_interval_from_config(self):
+        config.save({"interval_s": 60}, self.path)
+        records = self.run_box([4.5, 4.6, 4.7])
+        self.assertEqual(self.time.sleeps, [60, 60, 60])
+        self.assertEqual([r["temp_c"] for r in records], [4.5, 4.6, 4.7])
+        self.assertEqual([r["timestamp_s"] for r in records], [1000, 1060, 1120])
+
+    def test_healthy_sensor_never_logs_a_failure(self):
+        records = self.run_box([4.5] * 5)
+        self.assertTrue(all(r["ok"] for r in records))
 
     # AC: Failed reads are logged, not silently skipped
-    def test_failed_read_is_logged_with_error_and_time(self):
-        lines = run_main(FakeBoard([OSError("sensor_timeout")], start_ms=7000))
-        self.assertEqual(lines, [
-            "Attemp:  1",
-            "ERROR: Sensor read failed sensor_timeout Time 7.0",
-        ])
-
-    def test_failed_read_does_not_print_a_temperature(self):
-        lines = run_main(FakeBoard([OSError("sensor_timeout")]))
-        self.assertFalse(any(line.startswith("Temperature") for line in lines))
-
-    def test_reading_continues_after_a_failed_read(self):
-        board = FakeBoard([OSError("sensor_timeout"), (4.6, 61.0)])
-        lines = run_main(board)
-        self.assertEqual(board.sleeps, [5, 5])
-        self.assertEqual(lines[-3:], [
-            "Attemp:  2",
-            "Temperature: 4.6 Time 5.0",
-            "Humidity: 61.0 Time: 5.0",
-        ])
+    def test_failed_read_is_logged_as_record_and_reading_continues(self):
+        records = self.run_box([4.5, OSError("sensor_timeout"), 4.7])
+        self.assertEqual([r["ok"] for r in records], [True, False, True])
+        self.assertEqual(records[1], {
+            "device_id": "BOX-001", "shipment_id": "SHP-1001", "seq": 2,
+            "timestamp_s": 1300, "temp_c": None, "ok": False, "error": "sensor_timeout",
+        })
 
 
 if __name__ == "__main__":

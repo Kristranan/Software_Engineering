@@ -1,29 +1,37 @@
-# Read Temperature & Humidity with DHT22
-# Import Library
-from machine import Pin  
+# Read temperature with the DHT22 on the configured interval (story 003-1).
+# Runs on ESP32 MicroPython in Wokwi. Needs config.py and scheduler.py on the board.
+#
+# The driver is read(): it returns °C or raises when the sensor fails. The
+# Scheduler adds device_id, shipment_id, seq and timestamp_s, waits interval_s
+# from config.json, and emits a failed read as a record too (ok=false).
+import json
+
+from machine import Pin
 from dht import DHT22
-from time import sleep, ticks_ms
-# Pin Setup
+
+from scheduler import Scheduler
+
+# Sprint 1 uses fixed test values (see the temperature data format agreement, item 9).
+DEVICE_ID = "BOX-001"
+SHIPMENT_ID = "SHP-1001"
+
 dht = DHT22(Pin(4))
-i = 0
-while True : 
-  time = ticks_ms() / 1000
-  i += 1
-  try : 
-    # Measure the temperature & humidity
-    if(i == 3) : raise OSError('Test sensor failure') #<------- Try uncomment 2 of this if you wnat to try fail case
+
+
+def read():
+    """Return the temperature in °C. Raises OSError when the sensor fails."""
     dht.measure()
-    
-    # Retrieve the sensor's temperature and humidity values.
-    temperature = dht.temperature()
-    humidity = dht.humidity()
-    
-    # Show values to shell
-    print('Attemp: ',i)
-    print('Temperature:',temperature, 'Time',time)
-    print('Humidity:',humidity, 'Time:',time)
-  except OSError as error: 
-    print('Attemp: ',i)
-    print('ERROR: Sensor read failed', error, 'Time',time)
-  # Delay 5 sec
-  sleep(5)
+    return dht.temperature()
+
+
+def emit(record):
+    """Log each record to the serial monitor as one JSON line."""
+    print(json.dumps(record))
+
+
+def main():
+    Scheduler(read, emit, DEVICE_ID, SHIPMENT_ID).run()
+
+
+if __name__ == "__main__":
+    main()
