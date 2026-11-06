@@ -36,7 +36,7 @@ def append_reading(record, path=READINGS_PATH):
             line = b"\n" + line
         f = open(path, "ab")
         try:
-            f.write(line)
+            f.write(line)  # one write per reading
         finally:
             f.close()  # the reading reaches flash when the file is closed
         return True
