@@ -69,17 +69,22 @@ At 1200 the box is too warm. That time goes to the heat total (004-1), and
   restarts after a power cut because the box has no RTC): add 0, never a
   negative number. Then carry on from the new reading.
 
-## 4. Functions (proposed)
+## 4. Functions (in `exposure/freeze_exposure.py`)
 
 Same style as `read_temp/` and `alert_depot/`: plain dicts, MicroPython and CPython.
+All of them are pure: no file, no clock.
 
-- `freeze_increment_s(last_good, record, lower_limit_c)` → int ≥ 0. Pure: no
-  file, no clock. `last_good` is `None` for the first reading.
-- `accumulate_freeze(state, record, lower_limit_c)` → new state
-  `{"freeze_s": int, "last_good": record or None}`. Pure.
+- `freeze_increment_s(last_good, record, lower_limit_c)` → int ≥ 0. **Done.**
+  `last_good` is `None` for the first reading.
+- `new_freeze_state()` → `{"freeze_s": 0, "last_good": None}`. **Done.**
+- `accumulate_freeze(state, record, lower_limit_c)` → a new state
+  `{"freeze_s": int, "last_good": record or None}`. **Done.** It never changes
+  the `state` it is given. `state` can be `None` when nothing is saved yet.
+  Only a good reading becomes `last_good`.
 
-004-1 can mirror these as `heat_increment_s` and `accumulate_heat`. Keeping
-heat and freeze in two functions makes AC1 hold by construction.
+004-1 mirrors these as `heat_increment_s` (done, in `heat_exposure/`) and
+`accumulate_heat`. Keeping heat and freeze in two functions makes AC1 hold by
+construction.
 
 ## 5. Not in 004-2
 
