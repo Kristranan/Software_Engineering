@@ -106,6 +106,18 @@ A 4 MB ESP32 running MicroPython has a file system of about 2 MB, so the last
 two cells of the 10 s row would not fit. The real free space still has to be
 checked on the ESP32 in Wokwi (Phase 2).
 
+**One full transit cycle is up to 72 hours** (#16). 72 h is 259,200 s, so a
+trip stores 259,200 ÷ `interval_s` readings, at 160 bytes each:
+
+- At 300 s (default): 864 readings, about 138 KB. Fits.
+- At 21 s: 12,343 readings, about 1.97 MB. Just fits in about 2 MB.
+- Below about 21 s (down to the 10 s minimum): does not fit. At 10 s a trip
+  needs about 4.1 MB.
+
+So AC2 holds for any `interval_s` of about 21 s or more, not only for the
+300 s default. The exact limit depends on the real free space (open
+question 4).
+
 ## 6. Functions (proposed)
 
 Runs on ESP32 MicroPython and desktop CPython, like `read_temp/config.py`:
@@ -142,9 +154,9 @@ open question 2 is answered, `emit()` ignores the `False` return.
 
 ## 9. Open questions
 
-1. **How long is one full transit cycle?** Needed to check AC2. With about 2 MB
-   of file system, a 10 s interval fits roughly 34 hours. For the Product
-   Owner, through Aleef.
+1. **How long is one full transit cycle?** Answered in #16: up to 72 hours
+   (rural clinic deliveries when rainy-season roads are closed). Waiting for
+   the Product Owner to confirm.
 2. **Storage full:** `append_reading` returns `False`. Should the box also show
    or send something? Not in the acceptance criteria.
 3. **`seq` after a reboot:** it starts again at 1, so the same `seq` can appear
@@ -152,3 +164,8 @@ open question 2 is answered, `emit()` ignores the `False` return.
    the box has no battery-backed clock and is offline. File order is the only
    reliable order. Should `seq` keep counting across reboots
    (`read_temp/scheduler.py` notes this needs 003-2)?
+4. **Shortest interval for a 72-hour trip:** `read_temp/config.py` allows
+   `interval_s` from 10 s, but below about 21 s the file fills up before a
+   72-hour trip ends (section 5). Should the box stop users from setting a
+   shorter interval? For the Product Owner, through Aleef (asked in #16).
+   Nothing is changed until this is answered.
