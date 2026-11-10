@@ -103,20 +103,24 @@ Readings per hour = 3600 ÷ `interval_s` (`interval_s` is 10–3600 s, default 3
 | 10 s (minimum) | 57.6 KB | 1.4 MB | 2.8 MB | 4.1 MB |
 
 A 4 MB ESP32 running MicroPython has a file system of about 2 MB, so the last
-two cells of the 10 s row would not fit. The real free space still has to be
-checked on the ESP32 in Wokwi (Phase 2).
+two cells of the 10 s row would not fit.
+
+**Measured free space:** 2,080,768 bytes on the ESP32 in Wokwi (MicroPython
+v1.28.0), with `storage.py` on the board (`store_readings/on_box_check.py`,
+TDD Session 2). The real box also stores its other program files, so the
+space left for readings is a little less.
 
 **One full transit cycle is up to 72 hours** (#16). 72 h is 259,200 s, so a
 trip stores 259,200 ÷ `interval_s` readings, at 160 bytes each:
 
-- At 300 s (default): 864 readings, about 138 KB. Fits.
-- At 21 s: 12,343 readings, about 1.97 MB. Just fits in about 2 MB.
-- Below about 21 s (down to the 10 s minimum): does not fit. At 10 s a trip
-  needs about 4.1 MB.
+- At 300 s (default): 864 readings, 138,240 bytes. Fits.
+- At 20 s: 12,960 readings, 2,073,600 bytes. Just fits in the measured
+  2,080,768 bytes.
+- Below 20 s (down to the 10 s minimum): does not fit. At 10 s a trip needs
+  about 4.1 MB.
 
-So AC2 holds for any `interval_s` of about 21 s or more, not only for the
-300 s default. The exact limit depends on the real free space (open
-question 4).
+So AC2 holds for any `interval_s` of about 20 s or more, not only for the
+300 s default (open question 4).
 
 ## 6. Functions (proposed)
 
@@ -165,7 +169,7 @@ open question 2 is answered, `emit()` ignores the `False` return.
    reliable order. Should `seq` keep counting across reboots
    (`read_temp/scheduler.py` notes this needs 003-2)?
 4. **Shortest interval for a 72-hour trip:** `read_temp/config.py` allows
-   `interval_s` from 10 s, but below about 21 s the file fills up before a
+   `interval_s` from 10 s, but below about 20 s the file fills up before a
    72-hour trip ends (section 5). Should the box stop users from setting a
    shorter interval? For the Product Owner, through Aleef (asked in #16).
    Nothing is changed until this is answered.
