@@ -23,6 +23,11 @@ class ProfileError(Exception):
     pass
 
 
+def is_whole_seconds(value):
+    """True for an int >= 0. bool is rejected: in Python, True is also an int."""
+    return not isinstance(value, bool) and isinstance(value, int) and value >= 0
+
+
 def load_profile(path=PROFILE_PATH):
     """Return the profile dict with both limits as ints. Raises ProfileError."""
     try:
@@ -38,6 +43,6 @@ def load_profile(path=PROFILE_PATH):
         if key not in profile:
             raise ProfileError("missing %s" % (key,))
         value = profile[key]
-        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        if not is_whole_seconds(value):
             raise ProfileError("%s must be a whole number of seconds >= 0, got %r" % (key, value))
     return profile

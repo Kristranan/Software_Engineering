@@ -56,6 +56,15 @@ class ProfileCheckTest(unittest.TestCase):
             result = check.check_exposure(7200, 1800, self.path)
         self.assertEqual(result, {"heat_exceeded": False, "freeze_exceeded": False})
 
+    # TC11
+    def test_bad_exposure_total_raises_value_error_instead_of_a_result(self):
+        self.write_raw('{"heat_limit_s": 7200, "freeze_limit_s": 1800}')
+        for heat_s, freeze_s in ((-1, 0), (0, -1), (None, 0), (0, None),
+                                 ("60", 0), (True, 0), (60.5, 0)):
+            with self.subTest(heat_s=heat_s, freeze_s=freeze_s):
+                with self.assertRaises(ValueError):
+                    check.check_exposure(heat_s, freeze_s, self.path)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -7,9 +7,13 @@
 # A missing or bad profile raises ProfileError and gives no result, so the
 # caller must report "unknown", never "safe".
 from comparison import compare_exposure
-from profile_loader import PROFILE_PATH, ProfileError, load_profile
+from profile_loader import PROFILE_PATH, ProfileError, is_whole_seconds, load_profile
 
 
 def check_exposure(heat_s, freeze_s, path=PROFILE_PATH):
-    """Return {"heat_exceeded": bool, "freeze_exceeded": bool}. Raises ProfileError."""
+    """Return {"heat_exceeded": bool, "freeze_exceeded": bool}.
+    Raises ValueError for a bad total and ProfileError for a bad profile."""
+    for name, value in (("heat_s", heat_s), ("freeze_s", freeze_s)):
+        if not is_whole_seconds(value):
+            raise ValueError("%s must be a whole number of seconds >= 0, got %r" % (name, value))
     return compare_exposure(heat_s, freeze_s, load_profile(path))
