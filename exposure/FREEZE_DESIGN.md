@@ -82,9 +82,48 @@ All of them are pure: no file, no clock.
   the `state` it is given. `state` can be `None` when nothing is saved yet.
   Only a good reading becomes `last_good`.
 
-004-1 mirrors these as `heat_increment_s` (done, in `heat_exposure/`) and
-`accumulate_heat`. Keeping heat and freeze in two functions makes AC1 hold by
-construction.
+004-1 mirrors these as `heat_increment_s` (done, in `exposure/heat_exposure/`)
+and `accumulate_heat`. Keeping heat and freeze in two functions makes AC1 hold
+by construction.
+
+### Saving the total across a power cut (`exposure/freeze_state.py`)
+
+Without this, a power cut would restart `freeze_s` at 0 and erase a freeze
+event, which goes against AC2.
+
+- **One small file per total.** `freeze_state.json` holds only
+  `{"freeze_s", "last_good"}`. Heat would get its own file (`heat_state.json`),
+  so the two totals never share a file (AC1) and Aleef and Sia never edit the
+  same code.
+- **Saved after every reading, rewritten whole.** It is written to a `.tmp`
+  file first and then renamed over the old one, the same way as
+  `exposure_limits.save()`, so a power cut during a save leaves the old state.
+  The readings log (003-2) appends one line per reading because it keeps every
+  reading. The total is a single value, so rewriting a small file keeps it the
+  same size for the whole trip. Binary mode, like `storage.py`.
+- `save_freeze_state(state, path)` → True / False. **Never raises**, so a flash
+  problem never stops the box from counting.
+- `load_freeze_state(shipment_id, path)` → the saved state, or `None` to start
+  a new total. **Never raises.** `None` when there is no file, the file is
+  broken or not a freeze state, or it was saved during **another shipment**
+  (a new shipment always starts at 0).
+- `freeze_on_reading(state, record, lower_limit_c, path)` →
+  `accumulate_freeze()` + `save_freeze_state()`, returns the new state.
+
+**For Shogun (`read_temp/main.py`):**
+
+```python
+from exposure_limits import load as load_limits
+from freeze_state import load_freeze_state, freeze_on_reading
+
+# at boot
+limits = load_limits()
+freeze = load_freeze_state(shipment_id)        # None = start at 0
+
+# in emit(), for every record from the Scheduler
+freeze = freeze_on_reading(freeze, record, limits["lower_limit_c"])
+# 004-3 reads freeze["freeze_s"]
+```
 
 ## 5. Not in 004-2
 
@@ -118,9 +157,10 @@ construction.
 
 ## 7. Open questions
 
-1. **Saving the totals (Aleef):** One file for `heat_s` and
-   `freeze_s`, or one file each? Is the total saved after every reading? Check
-   whether 003-2's `store_readings/storage.py` can be reused.
+1. **Saving the totals (Aleef):** Freeze now uses its own file,
+   `freeze_state.json`, saved after every reading (section 4). Can heat do the
+   same with `heat_state.json`? Then `heat_s` and `freeze_s` are saved the same
+   way, as agreed on 5 Nov.
 2. **Product Owner (through Aleef):** Does "freeze" mean below 2 °C (the
    bottom of the profile), or below a freezing point such as 0 °C? The AC says
    "lower threshold", so the default is 2.0. Either way it changes in the file,
@@ -134,3 +174,6 @@ construction.
    team still has to choose where the box gets its time from and how it recovers
    the time after a restart (Plai's agreement, item 1). Until then, R1 adds 0
    when time goes backwards, and the time while the power was off is not counted.
+5. **Broken state file:** If `freeze_state.json` is broken (not just missing),
+   the box starts again at 0. This should almost never happen, because saves go
+   through a `.tmp` file. Should it also mark the shipment "unknown" (007-2)?
