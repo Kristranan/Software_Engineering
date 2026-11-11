@@ -1,6 +1,6 @@
 # TDD Test Report
 
-Smart Cold Box · Sprint 2 · Story 004-2 Accumulate freeze exposure · Session 3: accumulate_freeze()
+Smart Cold Box · Sprint 2 · Story 004-2 Accumulate freeze exposure · Session 2: accumulate_freeze()
 
 | Feature | Expected output | Test Case Number | Test Case Name | Dev | Test Date |
 | --- | --- | --- | --- | --- | --- |
