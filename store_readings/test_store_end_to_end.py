@@ -14,6 +14,11 @@ from storage import append_reading, load_readings  # noqa: E402
 # The same fakes as the 003-1 Scheduler tests, so both stay in step with Scheduler.
 from test_scheduler import FakeSensor, FakeTime  # noqa: E402
 
+# AC2 numbers, from store_readings/FORMAT.md section 5.
+TRIP_S = 72 * 3600     # one full transit cycle is up to 72 hours (#16)
+LINE_BYTES = 160       # planned size of one stored line
+FREE_BYTES = 2080768   # free space Pun measured on the ESP32 in Wokwi (#13)
+
 
 class PowerCut(Exception):
     """The box loses power: nothing after this runs until the next boot."""
@@ -99,6 +104,20 @@ class StoreEndToEndTest(unittest.TestCase):
         self.assertEqual(lines[-1], b"")  # the file ends with a newline
         self.assertEqual(len(lines), 5)   # 2 kept, 1 torn, 1 new, then ""
         self.assertEqual(json.loads(lines[3].decode()), after_boot)
+
+    def test_tc12_a_72_hour_trip_fits(self):
+        # TC-12 (AC2): one full 72-hour trip at the default interval fits on the box.
+        # Worst case: every read fails with a real sensor error, so every line is
+        # as long as it gets.
+        reads = TRIP_S // 300  # 864 readings at the default interval
+        scheduler = self.make([OSError(110, "ETIMEDOUT")] * reads)
+        self.assertEqual(scheduler.interval_s, 300)  # the default: no config file
+        scheduler.run(max_reads=reads)
+
+        size = os.stat(self.path)[6]
+        self.assertLessEqual(size, reads * LINE_BYTES)  # 138,240 bytes, the plan
+        self.assertLess(size, FREE_BYTES)
+        self.assertEqual(load_readings(self.path), (self.emitted, 0))
 
 
 if __name__ == "__main__":
