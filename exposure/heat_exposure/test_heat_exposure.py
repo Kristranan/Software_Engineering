@@ -2,9 +2,10 @@
 # No hardware, clock or network: records are plain dicts made up in the test.
 import copy
 import unittest
-
-from heat_exposure import heat_increment_s, is_good_reading
-
+import heat_exposure as hx
+from heat_exposure import (accumulate_heat, heat_increment_s,
+                           is_good_reading, new_heat_state)
+    
 LIMIT = 8.0
 
 
@@ -103,6 +104,71 @@ class HeatIncrementTest(unittest.TestCase):
             total += heat_increment_s(last_good, record, LIMIT)
             self.assertEqual(total, expected_total[i], "at timestamp_s %d" % (i * 300))
             last_good = record
+
+class TestAccumulateHeat(unittest.TestCase):
+    def test_new_heat_state_starts_at_zero(self):
+        self.assertEqual(hx.new_heat_state(), {"heat_s": 0, "last_good": None})
+
+    def test_first_reading_is_remembered_and_adds_nothing(self):
+        r0 = reading(0, 10.0)
+        state = hx.accumulate_heat(hx.new_heat_state(), r0, LIMIT)
+        self.assertEqual(state, {"heat_s": 0, "last_good": r0})
+
+    def test_first_reading_if_failed_leaves_last_good_none(self):
+        state = hx.accumulate_heat(hx.new_heat_state(), failed(0), LIMIT)
+        self.assertEqual(state, {"heat_s": 0, "last_good": None})
+
+    def test_total_grows_by_the_heat_time(self):
+        state = {"heat_s": 600, "last_good": reading(300, 9.5)}
+        state = hx.accumulate_heat(state, reading(600, 10.0), LIMIT)
+        self.assertEqual(state["heat_s"], 900)
+
+    def test_normal_interval_does_not_reduce_total(self):
+        state = {"heat_s": 600, "last_good": reading(300, 5.0)}
+        state = hx.accumulate_heat(state, reading(600, 4.0), LIMIT)
+        self.assertEqual(state["heat_s"], 600)
+
+    def test_failed_read_keeps_the_last_good_reading(self):
+        hot = reading(0, 9.5)
+        state = hx.accumulate_heat({"heat_s": 0, "last_good": hot}, failed(300), LIMIT)
+        self.assertEqual(state, {"heat_s": 0, "last_good": hot})
+
+    def test_gap_across_failed_read_is_counted_on_next_good_reading(self):
+        state = hx.accumulate_heat(None, reading(0, 9.5), LIMIT)
+        state = hx.accumulate_heat(state, failed(300), LIMIT)
+        state = hx.accumulate_heat(state, reading(600, 5.0), LIMIT)
+        self.assertEqual(state["heat_s"], 600)
+
+    def test_missing_state_starts_a_new_total(self):
+        r0 = reading(0, 10.0)
+        state = hx.accumulate_heat(None, r0, LIMIT)
+        self.assertEqual(state, {"heat_s": 0, "last_good": r0})
+
+    def test_old_state_is_not_changed(self):
+        old = {"heat_s": 0, "last_good": reading(300, 9.5)}
+        new = hx.accumulate_heat(old, reading(600, 10.0), LIMIT)
+        self.assertEqual(old, {"heat_s": 0, "last_good": reading(300, 9.5)})
+        self.assertEqual(new["heat_s"], 300)
+
+    def test_clock_reset_after_power_cut_preserves_total_and_updates_last_good(self):
+        state = {"heat_s": 600, "last_good": reading(900, 9.5)}
+        r_after = reading(60, 9.5)
+        state = hx.accumulate_heat(state, r_after, LIMIT)
+        self.assertEqual(state["heat_s"], 600)
+        self.assertEqual(state["last_good"], r_after)
+
+    def test_multi_step_shipment_sequence(self):
+        state = None
+        seq = [
+            (0, 5.0),    # normal -> 0
+            (300, 9.0),  # normal->hot -> 0
+            (600, 9.5),  # hot->hot -> +300 (300)
+            (900, 5.0),  # hot->normal -> +300 (600)
+            (1200, 4.0), # normal->normal -> +0 (600)
+        ]
+        for ts, temp in seq:
+            state = hx.accumulate_heat(state, reading(ts, temp), LIMIT)
+        self.assertEqual(state["heat_s"], 600)
 
 
 if __name__ == "__main__":
