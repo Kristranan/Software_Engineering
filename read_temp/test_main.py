@@ -30,14 +30,35 @@ class FakeDHT22:
         return self.current
 
 
-def load_main(values):
-    """Import main.py with fake machine and dht modules, so no hardware is needed."""
+class FakeProfileError(Exception):
+    pass
+
+
+def load_main(values, modules=None):
+    """Import main with fake hardware/state modules; callers can override dependencies."""
     pins = []
     sensor = FakeDHT22(values)
     fakes = {
         "machine": types.SimpleNamespace(Pin=lambda number: pins.append(number) or number),
         "dht": types.SimpleNamespace(DHT22=lambda pin: sensor),
+        "storage": types.SimpleNamespace(append_reading=lambda record: True),
+        "profile_check": types.SimpleNamespace(
+            ProfileError=FakeProfileError,
+            check_exposure=lambda heat_s, freeze_s: {
+                "heat_exceeded": False, "freeze_exceeded": False}),
+        "exposure_limits": types.SimpleNamespace(
+            load=lambda: {"upper_limit_c": 8.0, "lower_limit_c": 2.0}),
+        "freeze_state": types.SimpleNamespace(
+            load_freeze_state=lambda shipment_id: None,
+            freeze_on_reading=lambda state, record, lower_limit_c: (
+                state if state is not None else {"freeze_s": 0, "last_good": None})),
+        "heat_state": types.SimpleNamespace(
+            load_heat_state=lambda shipment_id: None,
+            heat_on_reading=lambda state, record, upper_limit_c: (
+                state if state is not None else {"heat_s": 0, "last_good": None})),
     }
+    if modules is not None:
+        fakes.update(modules)
     with mock.patch.dict(sys.modules, fakes):
         sys.modules.pop("main", None)
         main = importlib.import_module("main")
