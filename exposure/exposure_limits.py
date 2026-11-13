@@ -22,11 +22,15 @@ DEFAULTS = {
     # Time below this temperature counts as freeze exposure (004-2).
     # "Below" means strictly less than: 2.0 is not freeze, 1.9 is.
     "lower_limit_c": 2.0,
+    # Time above this temperature counts as heat exposure (004-1).
+    # "Above" means strictly greater than: 8.0 is not heat, 8.1 is.
+    "upper_limit_c": 8.0,
 }
 
 # Accepted values: what the DHT22 can measure (-40 to 80 °C).
 RANGES = {
     "lower_limit_c": (-40.0, 80.0),
+    "upper_limit_c": (-40.0, 80.0),
 }
 
 # MicroPython has no os.replace; its rename overwrites the target.
@@ -52,6 +56,8 @@ def validate(limits):
     out = {}
     for key, default in DEFAULTS.items():
         out[key] = _check(key, limits.get(key, default))
+    if out["lower_limit_c"] >= out["upper_limit_c"]:
+        raise ValueError("lower_limit_c must be less than upper_limit_c")
     return out
 
 
@@ -71,6 +77,8 @@ def load(path=LIMITS_PATH):
             out[key] = _check(key, raw.get(key, default))
         except ValueError:
             out[key] = default
+    if out["lower_limit_c"] >= out["upper_limit_c"]:
+        return dict(DEFAULTS)
     return out
 
 

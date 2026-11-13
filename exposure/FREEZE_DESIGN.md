@@ -1,8 +1,9 @@
 # 004-2 Accumulate freeze exposure: design
 
 Phase 1 of story 004-2. Owner: Sia (Sprint 2 backlog).
-Status: **agreed**, 5 Nov 2026, with Aleef (004-1) and with Shogun and Plai
-(004-3). See section 6. Still open: the questions in section 7.
+Status: **done, ready for the Sprint Review** (13 Nov 2026). Design agreed on
+5 Nov with Aleef (004-1) and with Shogun and Plai (004-3), see section 6.
+Definition of Done check: section 8. Still open: the questions in section 7.
 
 Acceptance criteria of 004-2:
 - AC1. Time below the lower threshold accumulates separately from heat.
@@ -24,7 +25,9 @@ Acceptance criteria of 004-2:
   `lower_limt_c`).
 - **004-1 (agreed with Aleef):** Aleef adds `upper_limit_c` (default 8.0) to the
   same file, as one more entry in `DEFAULTS` and `RANGES`, plus a check that
-  `lower_limit_c < upper_limit_c`.
+  `lower_limit_c < upper_limit_c`. **Done, 13 Nov:** there is one copy only,
+  `exposure/exposure_limits.py` (with its `.json` and tests), holding both
+  limits. The copy that was in `exposure/heat_exposure/` is removed.
 
 ## 2. How the box adds up time below the limit
 
@@ -83,7 +86,8 @@ All of them are pure: no file, no clock.
   Only a good reading becomes `last_good`.
 
 004-1 mirrors these as `heat_increment_s` (done, in `exposure/heat_exposure/`)
-and `accumulate_heat`. Keeping heat and freeze in two functions makes AC1 hold
+and `accumulate_heat`. The heat files stay in `exposure/heat_exposure/`, because
+`vaccine_profile/exposure_comparison.py` (004-3) imports them from there. Keeping heat and freeze in two functions makes AC1 hold
 by construction.
 
 ### Saving the total across a power cut (`exposure/freeze_state.py`)
@@ -92,9 +96,9 @@ Without this, a power cut would restart `freeze_s` at 0 and erase a freeze
 event, which goes against AC2.
 
 - **One small file per total.** `freeze_state.json` holds only
-  `{"freeze_s", "last_good"}`. Heat would get its own file (`heat_state.json`),
-  so the two totals never share a file (AC1) and Aleef and Sia never edit the
-  same code.
+  `{"freeze_s", "last_good"}`. Heat gets its own file, `heat_state.json`, saved
+  the same way (agreed with Aleef, 13 Nov), so the two totals never share a file
+  (AC1) and Aleef and Sia never edit the same code.
 - **Saved after every reading, rewritten whole.** It is written to a `.tmp`
   file first and then renamed over the old one, the same way as
   `exposure_limits.save()`, so a power cut during a save leaves the old state.
@@ -110,7 +114,8 @@ event, which goes against AC2.
 - `freeze_on_reading(state, record, lower_limit_c, path)` →
   `accumulate_freeze()` + `save_freeze_state()`, returns the new state.
 
-**For Shogun (`read_temp/main.py`):**
+**For Shogun (`read_temp/main.py`), agreed with Aleef and Shogun on 13 Nov.**
+The real box only starts counting freeze time once this is in `main.py`:
 
 ```python
 from exposure_limits import load as load_limits
@@ -144,6 +149,10 @@ freeze = freeze_on_reading(freeze, record, limits["lower_limit_c"])
 - **Totals survive a power cut.** `heat_s` is saved to a file on the flash, in
   the same style as 003-2's storage, so it is not lost after a power cut.
   `freeze_s` is saved the same way.
+- **13 Nov:** each total has its own file, `heat_state.json` and
+  `freeze_state.json`, written through a `.tmp` file (section 4). The duplicate
+  `exposure_limits` files in `exposure/heat_exposure/` are removed. Shogun adds
+  the code from section 4 to `main.py`.
 
 ### With Shogun and Plai (004-3)
 
@@ -157,23 +166,45 @@ freeze = freeze_on_reading(freeze, record, limits["lower_limit_c"])
 
 ## 7. Open questions
 
-1. **Saving the totals (Aleef):** Freeze now uses its own file,
-   `freeze_state.json`, saved after every reading (section 4). Can heat do the
-   same with `heat_state.json`? Then `heat_s` and `freeze_s` are saved the same
-   way, as agreed on 5 Nov.
-2. **Product Owner (through Aleef):** Does "freeze" mean below 2 °C (the
+1. **Product Owner (through Aleef):** Does "freeze" mean below 2 °C (the
    bottom of the profile), or below a freezing point such as 0 °C? The AC says
    "lower threshold", so the default is 2.0. Either way it changes in the file,
    not the code.
-3. **Long gaps:** With R1, a 2-hour sensor failure after a cold reading counts
+2. **Long gaps:** With R1, a 2-hour sensor failure after a cold reading counts
    as 2 hours of freeze. Is that right (safe side), or should long gaps go to
    007-2 "unknown" instead?
-4. **Time source after a power cut (Aleef and the team).** Not decided yet
+3. **Time source after a power cut (Aleef and the team).** Not decided yet
    (Shogun, 5 Nov). The earlier prototype used `ticks_ms()`, which restarts after
    a power cut, so it cannot stand for real time that continues across one. The
    team still has to choose where the box gets its time from and how it recovers
    the time after a restart (Plai's agreement, item 1). Until then, R1 adds 0
    when time goes backwards, and the time while the power was off is not counted.
-5. **Broken state file:** If `freeze_state.json` is broken (not just missing),
+4. **Broken state file:** If `freeze_state.json` is broken (not just missing),
    the box starts again at 0. This should almost never happen, because saves go
    through a `.tmp` file. Should it also mark the shipment "unknown" (007-2)?
+
+## 8. Definition of Done check (13 Nov 2026)
+
+| Definition of Done | Status |
+| --- | --- |
+| Code is merged | Yes, on `main` in `exposure/`: `exposure_limits`, `freeze_exposure`, `freeze_state`, `demo_004_2`. |
+| Unit tests pass | Yes. `exposure/`: 57 tests OK (limits 12, freeze_exposure 27, freeze_state 10, demo 3, acceptance 5). |
+| Acceptance Criteria pass | Yes. `test_acceptance_004_2.py`, TC-22 to TC-26, run the whole flow: limits file → readings → saved freeze total, with heat counted next to it. **AC1:** TC-22 to TC-24. **AC2:** TC-25 and TC-26. To check they catch real mistakes, the code was broken on purpose 4 ways (warming takes freeze time off; heat counted as freeze; total not saved; time going backwards counted): the acceptance tests failed every time. |
+| No critical defects remain | None known in the 004-2 code. Known limits outside it are listed below. |
+| The Product Owner accepts the Story | At the Sprint Review, 14 Nov 2026. |
+
+**Known limits (not defects in 004-2, but the PO should know):**
+
+- The real box starts counting freeze time only after Shogun adds the code in
+  section 4 to `read_temp/main.py` (agreed on 13 Nov).
+- Time source after a power cut (question 3): the time while the power is off is
+  not counted until the team decides on an RTC or another time source.
+- The code is written for MicroPython (plain dicts, `os.rename` fallback, binary
+  files) but has only been run on desktop Python, not yet on the ESP32 board.
+
+**Run it** (from `exposure/`):
+
+```text
+python -m unittest            # all 57 tests
+python demo_004_2.py          # the Sprint Review demo
+```
