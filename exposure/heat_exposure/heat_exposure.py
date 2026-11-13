@@ -40,3 +40,28 @@ def heat_increment_s(last_good, record, upper_limit_c):
     if last_good["temp_c"] > upper_limit_c:
         return gap_s
     return 0
+
+
+def new_heat_state():
+    """Start of a shipment: no heat time yet, no reading yet."""
+    return {"heat_s": 0, "last_good": None}
+
+
+def accumulate_heat(state, record, upper_limit_c):
+    """Return the heat state after record. Never changes state.
+
+    state: {"heat_s": int, "last_good": record or None}, or None when there
+    is no saved state yet (for example a new shipment).
+
+    heat_s only ever grows (AC2): the only change is adding
+    heat_increment_s(), which is never negative. Freeze is not read or written
+    here (AC1). Only a good reading becomes last_good, so after a failed read
+    the gap is counted when the next good reading arrives.
+    """
+    if state is None:
+        state = new_heat_state()
+    last_good = state["last_good"]
+    heat_s = state["heat_s"] + heat_increment_s(last_good, record, upper_limit_c)
+    if is_good_reading(record):
+        last_good = record
+    return {"heat_s": heat_s, "last_good": last_good}
